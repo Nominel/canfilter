@@ -84,7 +84,7 @@ def isotp_send(panda, x, addr, bus=0, recvaddr=None, subaddr=None, rate=None):
     panda_send(panda, addr, msg(x), bus)
   elif len(x) <= 6 and subaddr is not None:
     #panda.can_send(addr, bytes([subaddr]) + msg(x)[0:7], bus)
-    panda_send(panda, nddr, bytes([subaddr]) + msg(x)[0:7], bus)
+    panda_send(panda, addr, bytes([subaddr]) + msg(x)[0:7], bus)
   else:
     if subaddr:
       ss = bytes([subaddr, 0x10 + (len(x) >> 8), len(x) & 0xFF]) + x[0:5]
