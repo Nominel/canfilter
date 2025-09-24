@@ -356,20 +356,6 @@ uint32_t can_slots_empty(can_ring *q) {
   return ret;
 }
 
-uint32_t can_queue_depth(can_ring *q) {
-  uint32_t ret;
-
-  ENTER_CRITICAL();
-  if (q->w_ptr >= q->r_ptr) {
-    ret = q->w_ptr - q->r_ptr;
-  } else {
-    ret = q->fifo_size - q->r_ptr + q->w_ptr;
-  }
-  EXIT_CRITICAL();
-
-  return ret;
-}
-
 void can_clear(can_ring *q) {
   ENTER_CRITICAL();
   q->w_ptr = 0;
@@ -926,7 +912,13 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // (OVERWRITE) ACC control msg on can 0, EON is sending
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          if (can_queue_depth(&can_acc_control_q) > 0U)
+          bool has_pending_override;
+
+          ENTER_CRITICAL();
+          has_pending_override = (can_acc_control_q.w_ptr != can_acc_control_q.r_ptr);
+          EXIT_CRITICAL();
+
+          if (has_pending_override)
           {
             acc_control_timeout = 0;
 
