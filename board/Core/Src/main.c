@@ -35,7 +35,7 @@
 #define F_MIRROR_ACC_MSG      (1 << 5)
 #define F_SET_DISTANCE_REQ    (1 << 6)
 
-uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
+uint16_t features = (F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
 
 // 10 msg
 #define MAX_ACC_CONTROL_TIMEOUT 300
@@ -356,6 +356,20 @@ uint32_t can_slots_empty(can_ring *q) {
   return ret;
 }
 
+uint32_t can_depth(can_ring *q) {
+  uint32_t ret = 0;
+
+  ENTER_CRITICAL();
+  if (q->w_ptr >= q->r_ptr) {
+    ret = q->w_ptr - q->r_ptr;
+  } else {
+    ret = q->fifo_size - q->r_ptr + q->w_ptr;
+  }
+  EXIT_CRITICAL();
+
+  return ret;
+}
+
 void can_clear(can_ring *q) {
   ENTER_CRITICAL();
   q->w_ptr = 0;
@@ -658,7 +672,7 @@ void load_features()
 
   if (*p == 0xFFFF)
   {
-    features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
+    features = (F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
   }
   else
   {
@@ -912,10 +926,10 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // (OVERWRITE) ACC control msg on can 0, EON is sending
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          acc_control_timeout = 0;
-
-          // no forward
-          RxHeader.DLC = 0;
+          if (can_depth(&can_acc_control_q) > 0U)
+          {
+            acc_control_timeout = 0;
+          }
         }
         // (OVERWRITE) PRE COLLISION 2
         else if (RxHeader.StdId == CAN_FILTER_PRE_COLLISION_2 && RxHeader.DLC == 8)
@@ -1128,74 +1142,80 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               stock_acc_type = ((RxData[2] >> 6) & 0x03);
             }
 
+            bool override_applied = false;
+
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
             {
               // load ACC control (overwrite) msg
-              if (!can_pop(&can_acc_control_q, &to_fwd))
+              if (can_pop(&can_acc_control_q, &to_fwd))
               {
-                continue; // drop
-              }
-
-              // enforce error display on dash
-              // ACC_MALFUNCTION
-              if ((RxData[2] & 0x4) != 0)
-              {
-                  to_fwd.Data[2] |= 0x4;
-              }
-
-              // RADAR_DIRTY
-              if ((RxData[2] & 0x8) != 0)
-              {
-                  to_fwd.Data[2] |= 0x8;
-              }
-
-              // ACC_CUT_IN
-              if ((RxData[3] & 0x2) != 0)
-              {
-                  to_fwd.Data[3] |= 0x2;
-              }
-
-              // DISTANCE_REQ
-              if (((features & F_SET_DISTANCE_REQ) != 0) || ((features & F_MIRROR_ACC_MSG) == 0))
-              {
-                if ((RxData[2] & 0x10) != 0)
+                // enforce error display on dash
+                // ACC_MALFUNCTION
+                if ((RxData[2] & 0x4) != 0)
                 {
-                  to_fwd.Data[2] |= 0x10;
-                }
-                else
-                {
-                  to_fwd.Data[2] &= 0xEF;
-                }
-              }
-
-              // 45 on dash
-              if (vehicle_speed < 41.5)
-              {
-                // engage at 30kph, disengage at 25kph
-                // disable lead car to disengage, or disable engagement
-                if ((features & F_ACC_SPEED_LOCKOUT) &&
-                    (stock_acc_type != 1) &&
-                    (!is_hybrid) &&
-                    ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
-                {
-                  speed_lockout_tick = HAL_GetTick();
+                    to_fwd.Data[2] |= 0x4;
                 }
 
-                if (speed_lockout_tick + 500 > HAL_GetTick())
+                // RADAR_DIRTY
+                if ((RxData[2] & 0x8) != 0)
                 {
-                  // no lead car, clear mini_car 0x20
-                  to_fwd.Data[2] &= 0xDF;
-                  // lead standstill to 0, clear lead_standstill 0x20
-                  to_fwd.Data[3] &= 0xDF;
+                    to_fwd.Data[2] |= 0x8;
                 }
-              }
 
-              // overwrite (with content from EON)
-              memcpy(RxData, to_fwd.Data, 7);
-              RxData[7] = toyota_checksum(0x343, RxData, 8);
+                // ACC_CUT_IN
+                if ((RxData[3] & 0x2) != 0)
+                {
+                    to_fwd.Data[3] |= 0x2;
+                }
+
+                // DISTANCE_REQ
+                if (((features & F_SET_DISTANCE_REQ) != 0) || ((features & F_MIRROR_ACC_MSG) == 0))
+                {
+                  if ((RxData[2] & 0x10) != 0)
+                  {
+                    to_fwd.Data[2] |= 0x10;
+                  }
+                  else
+                  {
+                    to_fwd.Data[2] &= 0xEF;
+                  }
+                }
+
+                // 45 on dash
+                if (vehicle_speed < 41.5)
+                {
+                  // engage at 30kph, disengage at 25kph
+                  // disable lead car to disengage, or disable engagement
+                  if ((features & F_ACC_SPEED_LOCKOUT) &&
+                      (stock_acc_type != 1) &&
+                      (!is_hybrid) &&
+                      ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
+                  {
+                    speed_lockout_tick = HAL_GetTick();
+                  }
+
+                  if (speed_lockout_tick + 500 > HAL_GetTick())
+                  {
+                    // no lead car, clear mini_car 0x20
+                    to_fwd.Data[2] &= 0xDF;
+                    // lead standstill to 0, clear lead_standstill 0x20
+                    to_fwd.Data[3] &= 0xDF;
+                  }
+                }
+
+                // overwrite (with content from EON)
+                memcpy(RxData, to_fwd.Data, 7);
+                RxData[7] = toyota_checksum(0x343, RxData, 8);
+                override_applied = true;
+              }
+              else
+              {
+                acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
+              }
             }
-            else
+
+            if (!override_applied)
             {
               // initializing, inject fake msg
               if (low_speed_lockout == 3)
