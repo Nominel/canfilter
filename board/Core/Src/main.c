@@ -35,7 +35,7 @@
 #define F_MIRROR_ACC_MSG      (1 << 5)
 #define F_SET_DISTANCE_REQ    (1 << 6)
 
-uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
+uint16_t features = (F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
 
 // 10 msg
 #define MAX_ACC_CONTROL_TIMEOUT 300
@@ -356,6 +356,20 @@ uint32_t can_slots_empty(can_ring *q) {
   return ret;
 }
 
+uint32_t can_depth(can_ring *q) {
+  uint32_t ret = 0;
+
+  ENTER_CRITICAL();
+  if (q->w_ptr >= q->r_ptr) {
+    ret = q->w_ptr - q->r_ptr;
+  } else {
+    ret = q->fifo_size - q->r_ptr + q->w_ptr;
+  }
+  EXIT_CRITICAL();
+
+  return ret;
+}
+
 void can_clear(can_ring *q) {
   ENTER_CRITICAL();
   q->w_ptr = 0;
@@ -658,7 +672,7 @@ void load_features()
 
   if (*p == 0xFFFF)
   {
-    features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
+    features = (F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
   }
   else
   {
@@ -912,17 +926,9 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // (OVERWRITE) ACC control msg on can 0, EON is sending
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          bool has_pending_override;
-
-          ENTER_CRITICAL();
-          has_pending_override = (can_acc_control_q.w_ptr != can_acc_control_q.r_ptr);
-          EXIT_CRITICAL();
-
-          if (has_pending_override)
+          if (can_depth(&can_acc_control_q) > 0U)
           {
             acc_control_timeout = 0;
-            // no forward
-            RxHeader.DLC = 0;
           }
         }
         // (OVERWRITE) PRE COLLISION 2
