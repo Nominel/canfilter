@@ -912,12 +912,15 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // (OVERWRITE) ACC control msg on can 0, EON is sending
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          bool has_override_frame = can_slots_empty(&can_acc_control_q) <
-            (can_acc_control_q.fifo_size - 1U);
-          if (has_override_frame)
+          bool has_pending_override;
+
+          ENTER_CRITICAL();
+          has_pending_override = (can_acc_control_q.w_ptr != can_acc_control_q.r_ptr);
+          EXIT_CRITICAL();
+
+          if (has_pending_override)
           {
             acc_control_timeout = 0;
-
             // no forward
             RxHeader.DLC = 0;
           }
