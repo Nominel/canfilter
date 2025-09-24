@@ -3,7 +3,18 @@ import os
 import sys
 import struct
 import hashlib
-from Crypto.PublicKey import RSA
+try:
+  from Crypto.PublicKey import RSA
+except ImportError:
+  try:
+    from Cryptodome.PublicKey import RSA
+  except ImportError:
+    sys.stderr.write(
+      "PyCryptodome is required to sign firmware images. Install it with "
+      "'pip install pycryptodome' or provide a compatible 'Crypto'/'Cryptodome' "
+      "module.\n"
+    )
+    raise SystemExit(1)
 import binascii
 
 # increment this to make new hardware not run old versions
