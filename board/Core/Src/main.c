@@ -921,7 +921,6 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           if (has_pending_override)
           {
             acc_control_timeout = 0;
-
             // no forward
             RxHeader.DLC = 0;
           }
