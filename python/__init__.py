@@ -63,6 +63,9 @@ class BootLoaderHandle(object):
     # use setitimer so we can support sub-second and long running timeouts
     prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
     timeout = 1.0 if timeout is None or timeout <= 0 else float(timeout)
+# use setitimer so we can support sub-second and long running timeouts
+    prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+    timeout = 1.0 if timeout is None or timeout <= 0 else float(timeout)
     prev_timer = signal.setitimer(signal.ITIMER_REAL, timeout)
     try:
       ret = panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
