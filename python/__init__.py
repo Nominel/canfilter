@@ -58,7 +58,7 @@ class BootLoaderHandle(object):
 
     def _handle_timeout(signum, frame):
       # will happen on reset
-      raise Exception("timeout")
+      raise TimeoutError("timeout")
 
     signal.signal(signal.SIGALRM, _handle_timeout)
     signal.alarm(1)
@@ -96,7 +96,7 @@ class FilterHandle(object):
 
     def _handle_timeout(signum, frame):
       # will happen on reset
-      raise Exception("timeout")
+      raise TimeoutError("timeout")
 
     signal.signal(signal.SIGALRM, _handle_timeout)
     signal.alarm(1)
