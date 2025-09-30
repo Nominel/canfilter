@@ -33,12 +33,20 @@ def recv(panda, cnt, addr, nbus):
   while len(ret) < cnt:
     kmsgs += panda_recv(panda)
     nmsgs = []
-    for ids, ts, dat, bus in kmsgs:
+    for msg in kmsgs:
+      if len(msg) == 4:
+        ids, ts, dat, bus = msg
+      elif len(msg) == 3:
+        ids, dat, bus = msg
+        ts = None
+      else:
+        raise ValueError(f"unexpected panda CAN message format: {msg!r}")
+
       if ids == addr and bus == nbus and len(ret) < cnt:
         ret.append(dat)
       else:
         # leave around
-        nmsgs.append((ids, ts, dat, bus))
+        nmsgs.append(msg)
     kmsgs = nmsgs[-256:]
   return ret
 
