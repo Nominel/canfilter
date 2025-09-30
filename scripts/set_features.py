@@ -4,7 +4,15 @@ import time
 import struct
 import argparse
 from panda import Panda
-from canfilter import CanFilter, FEATURE_LOCKSPEED, FEATURE_FAKELEAD, FEATURE_PASSTHRU, FEATURE_MIRROR_MSG, FEATURE_SET_DISTANCE
+from canfilter import (
+  CanFilter,
+  FEATURE_LOCKSPEED,
+  FEATURE_FAKELEAD,
+  FEATURE_PASSTHRU,
+  FEATURE_MIRROR_MSG,
+  FEATURE_SET_DISTANCE,
+  get_all_output_safety_mode,
+)
 
 if __name__ == "__main__":
 
@@ -32,7 +40,7 @@ if __name__ == "__main__":
       raise f
 
   p = Panda()
-  p.set_safety_mode(Panda.SAFETY_ALLOUTPUT)
+  p.set_safety_mode(get_all_output_safety_mode())
 
   while 1:
     if len(p.can_recv()) == 0:

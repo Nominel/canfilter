@@ -7,6 +7,26 @@ import binascii
 from .isotp import isotp_send, isotp_recv
 from panda import Panda
 
+_SAFETY_ALL_OUTPUT = None
+
+
+def get_all_output_safety_mode():
+  """Return the Panda safety mode value that enables unrestricted outputs."""
+  global _SAFETY_ALL_OUTPUT
+  if _SAFETY_ALL_OUTPUT is None:
+    try:
+      mode = Panda.SAFETY_ALLOUTPUT
+    except AttributeError:
+      try:
+        from opendbc.car.structs import CarParams
+      except ImportError as exc:
+        raise RuntimeError(
+          "opendbc is required to access safety modes with this version of panda"
+        ) from exc
+      mode = int(CarParams.SafetyModel.allOutput)
+    _SAFETY_ALL_OUTPUT = mode
+  return _SAFETY_ALL_OUTPUT
+
 __version__ = '0.0.1'
 
 BASEDIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../")
@@ -91,7 +111,7 @@ class CanFilter(object):
   @staticmethod
   def reset(panda, enter_bootstub=False, enter_bootloader=False):
     print(f"reset: bootstub {enter_bootstub}, bootloader {enter_bootloader}")
-    panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
+    panda.set_safety_mode(get_all_output_safety_mode(), True)
     if enter_bootloader:
       panda.can_send(CAN_FILTER_ADDR_MAGIC, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x02", 0)
     else:
@@ -107,7 +127,7 @@ class CanFilter(object):
     panda.send_heartbeat(True)
 
     # set alloutput, disble heartbeat
-    panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
+    panda.set_safety_mode(get_all_output_safety_mode(), True)
 
     CanFilter.reset(panda, enter_bootstub=True)
     time.sleep(0.5)
@@ -159,21 +179,21 @@ class CanFilter(object):
   def get_log(panda):
     ch = FilterHandle(panda)
     dat = b'\x00'
-    panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
+    panda.set_safety_mode(get_all_output_safety_mode(), True)
     return ch.transact(dat)
 
   @staticmethod
   def get_signature(panda):
     ch = FilterHandle(panda)
     dat = b'\x01'
-    panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
+    panda.set_safety_mode(get_all_output_safety_mode(), True)
     return ch.transact(dat)
 
   @staticmethod
   def get_state(panda):
     ch = FilterHandle(panda)
     dat = b'\x02'
-    panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
+    panda.set_safety_mode(get_all_output_safety_mode(), True)
     st = ch.transact(dat)
     fmt = [
       ('B', 'cfg_version'),
