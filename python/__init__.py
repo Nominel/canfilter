@@ -62,12 +62,20 @@ class BootLoaderHandle(object):
       raise TimeoutError("timeout")
 
     prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+    start_time = time.monotonic()
     prev_timer = signal.setitimer(signal.ITIMER_REAL, timeout, 0)
     try:
       return panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
     finally:
-      signal.setitimer(signal.ITIMER_REAL, prev_timer[0], prev_timer[1])
+      elapsed = time.monotonic() - start_time
       signal.signal(signal.SIGALRM, prev_handler)
+      if prev_timer[0] == 0 and prev_timer[1] == 0:
+        restored_delay = 0
+      else:
+        restored_delay = prev_timer[0] - elapsed
+        if restored_delay <= 0:
+          restored_delay = 1e-6
+      signal.setitimer(signal.ITIMER_REAL, max(restored_delay, 0), prev_timer[1])
 
   def transact(self, dat, timeout=0):
     panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
