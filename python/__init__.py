@@ -50,30 +50,58 @@ def panda_isotp_recv(pd, addr, bus=0, sendaddr=None, subaddr=None, bs=0, st=0):
   return isotp_recv(pd, addr, bus, sendaddr, subaddr, bs, st)
 
 class BootLoaderHandle(object):
+  _DEFAULT_TIMEOUT = 1.0
+  _TIME_SLICE = 1.0
+
   def __init__(self, panda):
     self.panda = panda
 
-  def transact(self, dat, timeout=1.0):
-    panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
+  def _recv_with_timeout(self, timeout):
 
     def _handle_timeout(signum, frame):
       # will happen on reset
       raise TimeoutError("timeout")
 
-    # use setitimer so we can support sub-second and long running timeouts
     prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
-    timeout = 1.0 if timeout is None or timeout <= 0 else float(timeout)
-# use setitimer so we can support sub-second and long running timeouts
-    prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
-    timeout = 1.0 if timeout is None or timeout <= 0 else float(timeout)
-    prev_timer = signal.setitimer(signal.ITIMER_REAL, timeout)
-    try:
-      ret = panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
-    finally:
-      signal.setitimer(signal.ITIMER_REAL, prev_timer[0], prev_timer[1])
-      signal.signal(signal.SIGALRM, prev_handler)
+    start_time = time.monotonic()
+    prev_timer = signal.setitimer(signal.ITIMER_REAL, timeout, 0)
 
-    return ret
+    try:
+      return panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
+    finally:
+      elapsed = time.monotonic() - start_time
+      signal.signal(signal.SIGALRM, prev_handler)
+      if prev_timer[0] == 0 and prev_timer[1] == 0:
+        restored_delay = 0
+      else:
+        restored_delay = prev_timer[0] - elapsed
+        if restored_delay <= 0:
+          restored_delay = 1e-6
+      signal.setitimer(signal.ITIMER_REAL, max(restored_delay, 0), prev_timer[1])
+
+  def transact(self, dat, timeout=0):
+    panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
+
+    total_timeout = self._DEFAULT_TIMEOUT if timeout is None or timeout <= 0 else float(timeout)
+    deadline = time.monotonic() + total_timeout
+    last_exc = None
+
+    while True:
+      remaining = deadline - time.monotonic()
+      if remaining <= 0:
+        error = TimeoutError(f"timeout waiting for bootloader response after {total_timeout:.3f}s")
+        raise error from last_exc
+
+      window = min(remaining, self._TIME_SLICE)
+      # avoid scheduling a zero length timer which would raise immediately
+      window = max(window, 1e-6)
+
+      try:
+        return self._recv_with_timeout(window)
+      except TimeoutError as exc:
+        last_exc = exc
+        # Allow the bootloader a chance to respond until the overall deadline expires.
+        continue
 
   def controlWrite(self, request_type, request, value, index, data, timeout=0):
     # ignore data in reply, panda doesn't use it
