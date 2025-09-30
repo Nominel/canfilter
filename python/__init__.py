@@ -53,19 +53,22 @@ class BootLoaderHandle(object):
   def __init__(self, panda):
     self.panda = panda
 
-  def transact(self, dat):
+  def transact(self, dat, timeout=1.0):
     panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
 
     def _handle_timeout(signum, frame):
       # will happen on reset
       raise TimeoutError("timeout")
 
-    signal.signal(signal.SIGALRM, _handle_timeout)
-    signal.alarm(1)
+    # use setitimer so we can support sub-second and long running timeouts
+    prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+    timeout = 1.0 if timeout is None or timeout <= 0 else float(timeout)
+    prev_timer = signal.setitimer(signal.ITIMER_REAL, timeout)
     try:
       ret = panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
     finally:
-      signal.alarm(0)
+      signal.setitimer(signal.ITIMER_REAL, prev_timer[0], prev_timer[1])
+      signal.signal(signal.SIGALRM, prev_handler)
 
     return ret
 
@@ -75,17 +78,17 @@ class BootLoaderHandle(object):
 
   def controlRead(self, request_type, request, value, index, length, timeout=0):
     dat = struct.pack("HHBBHHH", 0, 0, request_type, request, value, index, length)
-    return self.transact(dat)
+    return self.transact(dat, timeout)
 
   def bulkWrite(self, endpoint, data, timeout=0):
     if len(data) > 0x10:
       raise ValueError("Data must not be longer than 0x10")
     dat = struct.pack("HH", endpoint, len(data)) + data
-    return self.transact(dat)
+    return self.transact(dat, timeout)
 
   def bulkRead(self, endpoint, length, timeout=0):
     dat = struct.pack("HH", endpoint, 0)
-    return self.transact(dat)
+    return self.transact(dat, timeout)
 
 class FilterHandle(object):
   def __init__(self, panda):
