@@ -2,10 +2,11 @@
 import time
 import argparse
 from panda import Panda
+from canfilter import get_all_output_safety_mode
 
 if __name__ == "__main__":
   p = Panda()
-  p.set_safety_mode(Panda.SAFETY_ALLOUTPUT)
+  p.set_safety_mode(get_all_output_safety_mode())
 
   while 1:
     if len(p.can_recv()) == 0:
