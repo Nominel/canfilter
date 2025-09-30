@@ -25,7 +25,38 @@ def msg(x):
     assert False
   return ret.ljust(8, b"\x00")
 
+_CAN_SEND_MANY_FORMAT = None
 kmsgs = []
+
+
+def _panda_send_many(panda, addr, frames, bus):
+  """Compatibility wrapper for panda.can_send_many."""
+  global _CAN_SEND_MANY_FORMAT
+
+  if _CAN_SEND_MANY_FORMAT == "legacy":
+    panda.can_send_many([(addr, None, frame, bus) for frame in frames])
+    return
+  if _CAN_SEND_MANY_FORMAT == "modern":
+    panda.can_send_many([(addr, frame, bus) for frame in frames])
+    return
+
+  try:
+    panda.can_send_many([(addr, None, frame, bus) for frame in frames])
+  except Exception as exc:  # pylint: disable=broad-except
+    message = str(exc)
+    if isinstance(exc, ValueError) and ("expected 3" in message or "too many values" in message):
+      panda.can_send_many([(addr, frame, bus) for frame in frames])
+      _CAN_SEND_MANY_FORMAT = "modern"
+      return
+    if isinstance(exc, TypeError) and "4" in message and "3" in message:
+      panda.can_send_many([(addr, frame, bus) for frame in frames])
+      _CAN_SEND_MANY_FORMAT = "modern"
+      return
+    raise
+  else:
+    _CAN_SEND_MANY_FORMAT = "legacy"
+
+
 def recv(panda, cnt, addr, nbus):
   global kmsgs
   ret = []
@@ -33,12 +64,20 @@ def recv(panda, cnt, addr, nbus):
   while len(ret) < cnt:
     kmsgs += panda_recv(panda)
     nmsgs = []
-    for ids, ts, dat, bus in kmsgs:
+    for msg in kmsgs:
+      if len(msg) == 4:
+        ids, ts, dat, bus = msg
+      elif len(msg) == 3:
+        ids, dat, bus = msg
+        ts = None
+      else:
+        raise ValueError(f"unexpected panda CAN message format: {msg!r}")
+
       if ids == addr and bus == nbus and len(ret) < cnt:
         ret.append(dat)
       else:
         # leave around
-        nmsgs.append((ids, ts, dat, bus))
+        nmsgs.append(msg)
     kmsgs = nmsgs[-256:]
   return ret
 
@@ -113,7 +152,7 @@ def isotp_send(panda, x, addr, bus=0, recvaddr=None, subaddr=None, rate=None):
       panda_send(panda, addr, sends[-1], 0)
     else:
       if rate is None:
-        panda.can_send_many([(addr, None, s, bus) for s in sends])
+        _panda_send_many(panda, addr, sends, bus)
       else:
         for dat in sends:
           panda_send(panda, addr, dat, bus)
