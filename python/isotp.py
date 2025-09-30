@@ -10,7 +10,15 @@ DEBUG = False
 
 
 def _is_timeout_exception(exc):
-  return isinstance(exc, TimeoutError) or (isinstance(exc, Exception) and len(exc.args) == 1 and exc.args[0] == "timeout")
+  if isinstance(exc, TimeoutError):
+    return True
+
+  if isinstance(exc, Exception):
+    args = getattr(exc, "args", ())
+    if args and args[0] == "timeout":
+      return True
+
+  return False
 
 def _is_spi_nack(exc):
   return PandaSpiNackResponse is not None and isinstance(exc, PandaSpiNackResponse)
