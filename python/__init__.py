@@ -57,6 +57,7 @@ class BootLoaderHandle(object):
     self.panda = panda
 
   def _recv_with_timeout(self, timeout):
+
     def _handle_timeout(signum, frame):
       # will happen on reset
       raise TimeoutError("timeout")
@@ -64,6 +65,7 @@ class BootLoaderHandle(object):
     prev_handler = signal.signal(signal.SIGALRM, _handle_timeout)
     start_time = time.monotonic()
     prev_timer = signal.setitimer(signal.ITIMER_REAL, timeout, 0)
+
     try:
       return panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
     finally:
