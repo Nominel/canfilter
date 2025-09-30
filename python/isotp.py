@@ -8,6 +8,18 @@ except Exception:  # pylint: disable=broad-except
 
 DEBUG = False
 
+
+def _is_timeout_exception(exc):
+  if isinstance(exc, TimeoutError):
+    return True
+
+  if isinstance(exc, Exception):
+    args = getattr(exc, "args", ())
+    if args and args[0] == "timeout":
+      return True
+
+  return False
+
 def _is_spi_nack(exc):
   return PandaSpiNackResponse is not None and isinstance(exc, PandaSpiNackResponse)
 
@@ -30,7 +42,12 @@ def panda_send(panda, addr, dat, bus):
   _call_can_send(panda, addr, dat, bus)
 
 def panda_recv(panda):
-  x = panda.can_recv()
+  try:
+    x = panda.can_recv()
+  except Exception as exc:  # pylint: disable=broad-except
+    if _is_timeout_exception(exc):
+      return []
+    raise
   #for y in x:
     #print(f"RECV: bus: {y[3]}, addr: {y[0]}, data: {binascii.hexlify(y[2])}")
   #  if y[0] in (673, 681, 1, 2):
@@ -94,7 +111,11 @@ def recv(panda, cnt, addr, nbus):
   ret = []
 
   while len(ret) < cnt:
-    kmsgs += panda_recv(panda)
+    new_msgs = panda_recv(panda)
+    if not new_msgs:
+      time.sleep(0.01)
+      continue
+    kmsgs += new_msgs
     nmsgs = []
     for msg in kmsgs:
       if len(msg) == 4:
