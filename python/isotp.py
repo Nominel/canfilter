@@ -1,12 +1,33 @@
 import binascii
 import time
 
+try:
+  from panda.python.spi import PandaSpiNackResponse  # type: ignore[attr-defined]
+except Exception:  # pylint: disable=broad-except
+  PandaSpiNackResponse = None  # type: ignore[assignment]
+
 DEBUG = False
+
+def _is_spi_nack(exc):
+  return PandaSpiNackResponse is not None and isinstance(exc, PandaSpiNackResponse)
+
+
+def _call_can_send(panda, addr, dat, bus, *, attempts=5, delay=0.01):
+  for retry in range(attempts):
+    try:
+      panda.can_send(addr, dat, bus)
+      return
+    except Exception as exc:  # pylint: disable=broad-except
+      if _is_spi_nack(exc) and retry < attempts - 1:
+        time.sleep(delay)
+        continue
+      raise
+
 
 def panda_send(panda, addr, dat, bus):
   #if addr in (673, 681, 1, 2):
   #  print(f"SEND: bus: {bus}, addr: {addr}, data: {binascii.hexlify(dat)}")
-  panda.can_send(addr, dat, bus)
+  _call_can_send(panda, addr, dat, bus)
 
 def panda_recv(panda):
   x = panda.can_recv()
@@ -33,23 +54,34 @@ def _panda_send_many(panda, addr, frames, bus):
   """Compatibility wrapper for panda.can_send_many."""
   global _CAN_SEND_MANY_FORMAT
 
+  def _call(messages):
+    for retry in range(5):
+      try:
+        panda.can_send_many(messages)
+        return
+      except Exception as exc:  # pylint: disable=broad-except
+        if _is_spi_nack(exc) and retry < 4:
+          time.sleep(0.01)
+          continue
+        raise
+
   if _CAN_SEND_MANY_FORMAT == "legacy":
-    panda.can_send_many([(addr, None, frame, bus) for frame in frames])
+    _call([(addr, None, frame, bus) for frame in frames])
     return
   if _CAN_SEND_MANY_FORMAT == "modern":
-    panda.can_send_many([(addr, frame, bus) for frame in frames])
+    _call([(addr, frame, bus) for frame in frames])
     return
 
   try:
-    panda.can_send_many([(addr, None, frame, bus) for frame in frames])
+    _call([(addr, None, frame, bus) for frame in frames])
   except Exception as exc:  # pylint: disable=broad-except
     message = str(exc)
     if isinstance(exc, ValueError) and ("expected 3" in message or "too many values" in message):
-      panda.can_send_many([(addr, frame, bus) for frame in frames])
+      _call([(addr, frame, bus) for frame in frames])
       _CAN_SEND_MANY_FORMAT = "modern"
       return
     if isinstance(exc, TypeError) and "4" in message and "3" in message:
-      panda.can_send_many([(addr, frame, bus) for frame in frames])
+      _call([(addr, frame, bus) for frame in frames])
       _CAN_SEND_MANY_FORMAT = "modern"
       return
     raise
@@ -147,9 +179,9 @@ def isotp_send(panda, x, addr, bus=0, recvaddr=None, subaddr=None, rate=None):
     rr = recv(panda, 1, recvaddr, bus)[0]
     if rr.find(b"\x30\x01") != -1:
       for s in sends[:-1]:
-        panda_send(panda, addr, s, 0)
+        panda_send(panda, addr, s, bus)
         rr = recv(panda, 1, recvaddr, bus)[0]
-      panda_send(panda, addr, sends[-1], 0)
+      panda_send(panda, addr, sends[-1], bus)
     else:
       if rate is None:
         _panda_send_many(panda, addr, sends, bus)
