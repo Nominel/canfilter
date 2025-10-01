@@ -141,6 +141,10 @@ bool is_hybrid = false;
 uint8_t stock_acc_type = 0;
 uint32_t speed_lockout_tick = 0;
 
+static bool is_speed_lockout_active(uint32_t now) {
+  return (uint32_t)(now - speed_lockout_tick) < 500U;
+}
+
 // features config
 uint32_t config_page_address = 0x803F800;
 
@@ -1195,7 +1199,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     speed_lockout_tick = HAL_GetTick();
                   }
 
-                  if (speed_lockout_tick + 500 > HAL_GetTick())
+                  if (is_speed_lockout_active(HAL_GetTick()))
                   {
                     // no lead car, clear mini_car 0x20
                     to_fwd.Data[2] &= 0xDF;
@@ -1288,7 +1292,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                         }
                       }
 
-                      if (speed_lockout_tick + 500 > HAL_GetTick())
+                      if (is_speed_lockout_active(HAL_GetTick()))
                       {
                         // no lead car, clear mini_car 0x20
                         RxData[2] &= 0xDF;
